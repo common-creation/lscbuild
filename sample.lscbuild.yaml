@@ -1,0 +1,23 @@
+---
+version: 1
+jobs:
+  test1:
+    steps:
+      - cmd: echo $SHELL
+
+  test2:
+    shell: /bin/bash -x
+    steps:
+      - cmd: echo $SHELL
+      - cmd: pwd && ls
+      - cmd: pwd && ls
+        dir: /
+
+  test3:
+    shell: /bin/zsh
+    env:
+      - ENV_TEST_1=hoge
+    steps:
+      - cmd: env | grep ENV_TEST
+        env:
+          - ENV_TEST_2=huga
