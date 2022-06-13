@@ -7,7 +7,7 @@ before:
     # you may remove this if you don't need go generate
     # - go generate ./...
 builds:
-  - main: ./cmd
+  - main: ./cmd/lscbuild
     ldflags:
       - -s -w
       - -X main.Version={{.Version}}
