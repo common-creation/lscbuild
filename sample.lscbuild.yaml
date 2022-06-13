@@ -10,7 +10,8 @@ jobs:
     steps:
       - cmd: echo $SHELL
       - cmd: pwd && ls
-      - cmd: pwd && ls
+      - name: with dir
+        cmd: pwd && ls
         dir: /
 
   test3:
@@ -18,6 +19,27 @@ jobs:
     env:
       - ENV_TEST_1=hoge
     steps:
-      - cmd: env | grep ENV_TEST
+      - name: show ENV_TEST
+        cmd: env | grep ENV_TEST
         env:
           - ENV_TEST_2=huga
+  
+  test4:
+    steps:
+      - name: OK 1
+        cmd: echo OK 1
+        if:
+          - file:
+              exists: /etc/resolv.conf
+      - name: NG 1
+        cmd: echo NG 1
+        if:
+          - file:
+              exists: /etc/resolv.conf.hoge
+      - name: OK 2
+        cmd: echo OK 2
+        if:
+          - file:
+              exists: /etc/resolv.conf
+          - directory:
+              missing: ./ABCDEFG

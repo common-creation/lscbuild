@@ -2,13 +2,13 @@ package v1
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/common-creation/lscbuild/typing"
+	"github.com/common-creation/lscbuild/util"
 	"github.com/goccy/go-yaml"
 	"github.com/mitchellh/mapstructure"
 	"github.com/samber/lo"
@@ -29,9 +29,19 @@ type (
 		Env   []string `yaml:"env"`
 	}
 	Step struct {
-		Cmd string   `yaml:"cmd"`
-		Dir string   `yaml:"dir"`
-		Env []string `yaml:"env"`
+		Name *string  `yaml:"name"`
+		Cmd  string   `yaml:"cmd"`
+		Dir  string   `yaml:"dir"`
+		Env  []string `yaml:"env"`
+		If   []If     `yaml:"if"`
+	}
+	If struct {
+		Directory *IfExists `yaml:"directory,omitempty"`
+		File      *IfExists `yaml:"file,omitempty"`
+	}
+	IfExists struct {
+		Exists  *string `yaml:"exists,omitempty"`
+		Missing *string `yaml:"missing,omitempty"`
 	}
 )
 
@@ -71,6 +81,7 @@ func (e *Executor) Run(jobs ...string) error {
 			if err := mapstructure.Decode(job.Value, decoded); err != nil {
 				return err
 			}
+
 			if err := e.runJob(job.Key.(string), decoded); err != nil {
 				return err
 			}
@@ -80,8 +91,68 @@ func (e *Executor) Run(jobs ...string) error {
 	return nil
 }
 
+func (e *Executor) stepName(step *Step) string {
+	if step.Name != nil && *step.Name != "" {
+		return *step.Name
+	}
+	return step.Cmd
+}
+
+func (e *Executor) prepareStep(name string, step *Step) bool {
+	util.LogDebug("[lscbuild] prepare step: %s\n", name)
+
+	if len(step.If) == 0 {
+		return true
+	}
+
+	for _, i := range step.If {
+		if i.File != nil {
+			if i.File.Exists != nil {
+				absolutePath, err := filepath.Abs(*i.File.Exists)
+				if err != nil {
+					return false
+				}
+				if _, err := os.Stat(absolutePath); err != nil {
+					return false
+				}
+			}
+			if i.File.Missing != nil {
+				absolutePath, err := filepath.Abs(*i.File.Missing)
+				if err != nil {
+					return false
+				}
+				if _, err := os.Stat(absolutePath); err == nil {
+					return false
+				}
+			}
+		}
+		if i.Directory != nil {
+			if i.Directory.Exists != nil {
+				absolutePath, err := filepath.Abs(*i.Directory.Exists)
+				if err != nil {
+					return false
+				}
+				if _, err := os.Stat(absolutePath); err != nil {
+					return false
+				}
+			}
+			if i.Directory.Missing != nil {
+				absolutePath, err := filepath.Abs(*i.Directory.Missing)
+				if err != nil {
+					return false
+				}
+				if _, err := os.Stat(absolutePath); err == nil {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
+}
+
 func (e *Executor) runJob(name string, job *Job) (result error) {
-	fmt.Fprintf(os.Stderr, "[lscbuild] start job: %s\n", name)
+	util.LogInfo("[lscbuild] start job: %s\n", name)
 	defer func() {
 		if err := recover(); err != nil {
 			switch e := err.(type) {
@@ -102,6 +173,13 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 	shellArgs := strings.Split(job.Shell, " ")
 
 	for _, step := range job.Steps {
+		stepName := e.stepName(&step)
+
+		if !e.prepareStep(stepName, &step) {
+			util.LogInfo("[lscbuild] skip step: %s\n", stepName)
+			continue
+		}
+
 		cmd := exec.Command(shellArgs[0], append(shellArgs[1:], "-c", step.Cmd)...)
 		if step.Dir != "" {
 			if absolutePath, err := filepath.Abs(step.Dir); err == nil {
@@ -124,7 +202,7 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		fmt.Fprintf(os.Stderr, "[lscbuild] start command: %s\n", step.Cmd)
+		util.LogInfo("[lscbuild] start step: %s\n", stepName)
 
 		if err := cmd.Start(); err != nil {
 			result = err
@@ -134,6 +212,8 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 			result = err
 			return result
 		}
+
+		util.LogInfo("[lscbuild] end step: %s\n", stepName)
 	}
 
 	return result
