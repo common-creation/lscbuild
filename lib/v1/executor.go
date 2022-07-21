@@ -188,6 +188,8 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 		}
 
 		env := os.Environ()
+		cmd.Env = append(env, "LSCBUILD=1")
+
 		if len(job.Env) > 0 {
 			cmd.Env = append(env, job.Env...)
 		} else {
