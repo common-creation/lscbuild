@@ -38,6 +38,7 @@ type (
 	If struct {
 		Directory *IfExists `yaml:"directory,omitempty"`
 		File      *IfExists `yaml:"file,omitempty"`
+		Env       *[]string `yarl:"env,omitempty"`
 	}
 	IfExists struct {
 		Exists  *string `yaml:"exists,omitempty"`
@@ -146,6 +147,13 @@ func (e *Executor) prepareStep(name string, step *Step) bool {
 				}
 			}
 		}
+		if i.Env != nil {
+			for _, e1 := range *i.Env {
+				if _, ok := lo.Find(step.Env, func(e2 string) bool { return e1 == e2 }); !ok {
+					return false
+				}
+			}
+		}
 	}
 
 	return true
@@ -175,11 +183,6 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 	for _, step := range job.Steps {
 		stepName := e.stepName(&step)
 
-		if !e.prepareStep(stepName, &step) {
-			util.LogInfo("[lscbuild] skip step: %s\n", stepName)
-			continue
-		}
-
 		cmd := exec.Command(shellArgs[0], append(shellArgs[1:], "-c", step.Cmd)...)
 		if step.Dir != "" {
 			if absolutePath, err := filepath.Abs(step.Dir); err == nil {
@@ -199,6 +202,13 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 			cmd.Env = append(cmd.Env, step.Env...)
 		}
 		cmd.Env = append(cmd.Env, "SHELL="+job.Shell)
+
+		step.Env = cmd.Env
+
+		if !e.prepareStep(stepName, &step) {
+			util.LogInfo("[lscbuild] skip step: %s\n", stepName)
+			continue
+		}
 
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout

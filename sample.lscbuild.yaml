@@ -23,6 +23,10 @@ jobs:
         cmd: env | grep ENV_TEST
         env:
           - ENV_TEST_2=huga
+      - name: override ENV_TEST
+        cmd: env | grep ENV_TEST
+        env:
+          - ENV_TEST_1=huga
   
   test4:
     steps:
@@ -43,3 +47,11 @@ jobs:
               exists: /etc/resolv.conf
           - directory:
               missing: ./ABCDEFG
+
+  test5:
+    steps:
+      - name: OK 1
+        cmd: echo OK 1
+        if:
+          - env:
+            - HOGE=1
