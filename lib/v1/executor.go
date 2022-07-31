@@ -191,19 +191,18 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 		}
 
 		env := os.Environ()
-		cmd.Env = append(env, "LSCBUILD=1")
+		env = append(env, "LSCBUILD=1")
 
 		if len(job.Env) > 0 {
-			cmd.Env = append(env, job.Env...)
-		} else {
-			cmd.Env = env
+			env = append(env, job.Env...)
 		}
 		if len(step.Env) > 0 {
-			cmd.Env = append(cmd.Env, step.Env...)
+			env = append(env, step.Env...)
 		}
-		cmd.Env = append(cmd.Env, "SHELL="+job.Shell)
+		env = append(env, "SHELL="+job.Shell)
 
-		step.Env = cmd.Env
+		cmd.Env = env
+		step.Env = env
 
 		if !e.prepareStep(stepName, &step) {
 			util.LogInfo("[lscbuild] skip step: %s\n", stepName)
