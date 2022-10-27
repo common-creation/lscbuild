@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/common-creation/lscbuild/lib"
+	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v2"
 )
 
@@ -41,6 +42,10 @@ func main() {
 					Name:  "job",
 					Usage: "comma-separated target job names (run all if not present)",
 				},
+				&cli.StringFlag{
+					Name:  "env",
+					Usage: "path of '.env' for override environment variables",
+				},
 			},
 			Action: run,
 		},
@@ -57,8 +62,20 @@ func run(c *cli.Context) error {
 	if yamlPath == "" {
 		yamlPath = DEFAULT_YAML_PATH
 	}
+	envPath := c.String("env")
+	env := make([]string, 0)
+	if envPath != "" {
+		envMap, err := godotenv.Read(envPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for key, value := range envMap {
+			env = append(env, key+"="+value)
+		}
+	}
 	parser := lib.NewParser(&lib.ParserConfig{
-		YamlPath: yamlPath,
+		YamlPath:  yamlPath,
+		GlobalEnv: env,
 	})
 	executor, err := parser.Parse()
 	if err != nil {

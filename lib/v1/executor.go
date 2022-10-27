@@ -17,7 +17,8 @@ import (
 type (
 	Executor struct {
 		typing.Executor
-		lscBuild *LSCBuild
+		lscBuild  *LSCBuild
+		globalEnv []string
 	}
 	LSCBuild struct {
 		typing.LSCBuild
@@ -52,8 +53,13 @@ func NewV1Executer(body []byte) (*Executor, error) {
 		return nil, err
 	}
 	return &Executor{
-		lscBuild: lscBuild,
+		lscBuild:  lscBuild,
+		globalEnv: make([]string, 0),
 	}, nil
+}
+
+func (e *Executor) SetGlobalEnv(env []string) {
+	e.globalEnv = env
 }
 
 func (e *Executor) Run(jobs ...string) error {
@@ -199,6 +205,7 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 		if len(step.Env) > 0 {
 			env = append(env, step.Env...)
 		}
+		env = append(env, e.globalEnv...)
 		env = append(env, "SHELL="+job.Shell)
 
 		cmd.Env = env

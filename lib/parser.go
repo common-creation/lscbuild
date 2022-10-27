@@ -13,7 +13,8 @@ import (
 
 type (
 	ParserConfig struct {
-		YamlPath string
+		YamlPath  string
+		GlobalEnv []string
 	}
 	Parser struct {
 		parserConfig *ParserConfig
@@ -45,6 +46,9 @@ func (p *Parser) Parse() (typing.Executor, error) {
 		executorV1, err := v1.NewV1Executer(b)
 		if err != nil {
 			return nil, err
+		}
+		if p.parserConfig.GlobalEnv != nil && len(p.parserConfig.GlobalEnv) > 0 {
+			executorV1.SetGlobalEnv(p.parserConfig.GlobalEnv)
 		}
 		if err := yaml.Unmarshal(b, lscbuild); err != nil {
 			return nil, err
