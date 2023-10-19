@@ -180,8 +180,14 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 		}
 	}()
 
+	isWindows := util.IsWindows()
+
 	if job.Shell == "" {
-		job.Shell = "/bin/sh"
+		if isWindows {
+			job.Shell = "cmd.exe /c"
+		} else {
+			job.Shell = "/bin/sh"
+		}
 	}
 
 	shellArgs := strings.Split(job.Shell, " ")
@@ -189,7 +195,40 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 	for _, step := range job.Steps {
 		stepName := e.stepName(&step)
 
-		cmd := exec.Command(shellArgs[0], append(shellArgs[1:], "-c", step.Cmd)...)
+		if isWindows {
+			if strings.Contains(job.Shell, "cmd") {
+				file, err := os.CreateTemp(os.TempDir(), "*.bat")
+				if err != nil {
+					panic(err)
+				}
+				defer func() {
+					file.Close()
+					os.Remove(file.Name())
+				}()
+
+				file.WriteString("@echo off\n" + step.Cmd)
+				file.Sync()
+				file.Close()
+				step.Cmd = file.Name()
+			}
+			if strings.Contains(job.Shell, "powershell") {
+				file, err := os.CreateTemp(os.TempDir(), "*.ps1")
+				if err != nil {
+					panic(err)
+				}
+				defer func() {
+					file.Close()
+					os.Remove(file.Name())
+				}()
+
+				file.WriteString(step.Cmd)
+				file.Sync()
+				file.Close()
+				step.Cmd = file.Name()
+			}
+		}
+
+		cmd := exec.Command(shellArgs[0], append(shellArgs[1:], step.Cmd)...)
 		if step.Dir != "" {
 			if absolutePath, err := filepath.Abs(step.Dir); err == nil {
 				cmd.Dir = absolutePath
@@ -216,7 +255,7 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 			continue
 		}
 
-		cmd.Stdin = os.Stdin
+		cmd.Stdin = nil
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 

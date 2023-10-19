@@ -27,7 +27,7 @@ jobs:
         cmd: env | grep ENV_TEST
         env:
           - ENV_TEST_1=huga
-  
+
   test4:
     steps:
       - name: OK 1
@@ -65,3 +65,24 @@ jobs:
         if:
           - env:
             - HOGE=1
+
+  test7:
+    # shell: cmd.exe
+    steps:
+      - cmd: |-
+          dir
+      - cmd: dir
+        dir: C:\Windows
+      - cmd: |-
+          wmic path Win32_PnPEntity where "DeviceID like '%%SWD\\SCDEVICEENUM\\%%'" get Caption,DeviceID,Manufacturer,PNPClass
+
+  test8:
+    shell: powershell.exe
+    steps:
+      - cmd: |-
+          dir
+      - cmd: dir
+        dir: C:\Windows
+      - cmd: |-
+          wmic path Win32_PnPEntity where "DeviceID like '%%SWD\\SCDEVICEENUM\\%%'" get Caption,DeviceID,Manufacturer,PNPClass
+
