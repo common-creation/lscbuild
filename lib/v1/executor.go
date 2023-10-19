@@ -226,6 +226,20 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 				file.Close()
 				step.Cmd = file.Name()
 			}
+		} else {
+			file, err := os.CreateTemp(os.TempDir(), "*.sh")
+			if err != nil {
+				panic(err)
+			}
+			defer func() {
+				file.Close()
+				os.Remove(file.Name())
+			}()
+
+			file.WriteString(step.Cmd)
+			file.Sync()
+			file.Close()
+			step.Cmd = file.Name()
 		}
 
 		cmd := exec.Command(shellArgs[0], append(shellArgs[1:], step.Cmd)...)
