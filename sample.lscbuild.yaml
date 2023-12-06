@@ -86,3 +86,6 @@ jobs:
       - cmd: |-
           wmic path Win32_PnPEntity where "DeviceID like '%%SWD\\SCDEVICEENUM\\%%'" get Caption,DeviceID,Manufacturer,PNPClass
 
+  test9:
+    steps:
+      - use: mohemohe/lscbuild-plugin-sandbox
