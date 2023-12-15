@@ -39,9 +39,12 @@ type (
 		repoPath  string
 	}
 	PluginLifeCycle struct {
-		Initialize *Step `yaml:"initialize,omitempty"`
-		Run        *Step `yaml:"run,omitempty"`
-		Finalize   *Step `yaml:"finalize,omitempty"`
+		Initialize        *Step `yaml:"initialize,omitempty"`
+		InitializeWindows *Step `yaml:"initialize_windows,omitempty"`
+		Run               *Step `yaml:"run,omitempty"`
+		RunWindows        *Step `yaml:"run_windows,omitempty"`
+		Finalize          *Step `yaml:"finalize,omitempty"`
+		FinalizeWindows   *Step `yaml:"finalize_windows,omitempty"`
 	}
 	Step struct {
 		Name *string  `yaml:"name"`
@@ -379,6 +382,9 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 				newStep := cache.LifeCycle.Run.MustCopy()
 				for _, v := range step.Env {
 					newStep.Env = append(newStep.Env, v)
+				}
+				if newStep.Dir == "" {
+					newStep.Dir = cache.repoPath
 				}
 				newStep.Env = append(newStep.Env, "LSCBUILD_CWD="+cwd)
 
