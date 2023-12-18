@@ -425,10 +425,13 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 	}
 	if job.Shell == "" {
 		if isWindows {
-			job.Shell = "cmd.exe /c"
+			job.Shell = "powershell.exe"
 		} else {
 			job.Shell = "/bin/sh"
 		}
+	}
+	if isWindows && strings.HasPrefix(job.Shell, "cmd.exe") {
+		job.Shell = "cmd.exe /c"
 	}
 
 	shellArgs := strings.Split(job.Shell, " ")
@@ -500,7 +503,9 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 	}
 	env = append(env, e.globalEnv...)
 	env = append(env, "SHELL="+job.Shell)
-
+	if isWindows {
+		env = append(env, "ErrorActionPreference=Stop")
+	}
 	cmd.Env = env
 	step.Env = env
 
