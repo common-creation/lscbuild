@@ -89,3 +89,10 @@ jobs:
   test9:
     steps:
       - use: common-creation/lscbuild-plugin-sample
+
+  test10:
+    steps:
+      - cmd: echo ok
+      - cmd: echo ok && exit 0
+      - cmd: echo error && exit 1
+      - cmd: echo not exec

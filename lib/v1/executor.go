@@ -364,7 +364,7 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 		if isWindows {
 			job.Shell = "cmd.exe /c"
 		} else {
-			job.Shell = "/bin/sh"
+			job.Shell = "/bin/sh -e"
 		}
 	}
 
@@ -388,10 +388,16 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 				}
 				newStep.Env = append(newStep.Env, "LSCBUILD_CWD="+cwd)
 
-				e.runStep(job, &newStep)
+				result = e.runStep(job, &newStep)
+				if result != nil {
+					return result
+				}
 			}
 		} else {
-			e.runStep(job, &step)
+			result = e.runStep(job, &step)
+			if result != nil {
+				return result
+			}
 		}
 	}
 
