@@ -26,7 +26,7 @@ func main() {
 		Name:      "lscbuild",
 		Usage:     "Lightweight, Simple, Configuable builder",
 		Version:   Version,
-		Copyright: "© 2022 Common Creation, LLC",
+		Copyright: "© 2022 COMMON CREATION, Co., Ltd.",
 	}
 	app.Commands = []*cli.Command{
 		{
