@@ -47,17 +47,19 @@ type (
 		FinalizeWindows   *Step `yaml:"finalize_windows,omitempty"`
 	}
 	Step struct {
-		Name *string  `yaml:"name"`
-		Use  string   `yaml:"use"`
-		Cmd  string   `yaml:"cmd"`
-		Dir  string   `yaml:"dir"`
-		Env  []string `yaml:"env"`
-		If   []If     `yaml:"if"`
+		Name        *string  `yaml:"name"`
+		Use         string   `yaml:"use"`
+		Cmd         string   `yaml:"cmd"`
+		Dir         string   `yaml:"dir"`
+		Env         []string `yaml:"env"`
+		If          []If     `yaml:"if"`
+		IgnoreError bool     `yaml:"ignore_error" mapstructure:"ignore_error"`
 	}
 	If struct {
 		Directory *IfExists `yaml:"directory,omitempty"`
 		File      *IfExists `yaml:"file,omitempty"`
 		Env       *[]string `yarl:"env,omitempty"`
+		IsError   *bool     `yaml:"is_error,omitempty" mapstructure:"is_error"`
 	}
 	IfExists struct {
 		Exists  *string `yaml:"exists,omitempty"`
@@ -345,6 +347,7 @@ func (e *Executor) finalizePlugins() (result error) {
 
 func (e *Executor) runJob(name string, job *Job) (result error) {
 	util.LogInfo("[lscbuild] start job: %s\n", name)
+	util.LogDebug("[lscbuild] job: %+v\n", job)
 	defer func() {
 		if err := recover(); err != nil {
 			switch e := err.(type) {
@@ -374,6 +377,15 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 	}
 
 	for _, step := range job.Steps {
+		if result != nil && !step.IsError() {
+			util.LogInfo("[lscbuild] skip step: %s\n", e.stepName(&step))
+			continue
+		}
+		if result == nil && step.IsError() {
+			util.LogInfo("[lscbuild] skip step: %s\n", e.stepName(&step))
+			continue
+		}
+
 		if step.Use != "" {
 			parsed := e.parsePluginUse(step.Use)
 			cache := e.pluginCache[parsed.GitRepo]
@@ -389,15 +401,13 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 				newStep.Env = append(newStep.Env, "LSCBUILD_CWD="+cwd)
 
 				result = e.runStep(job, &newStep)
-				if result != nil {
-					return result
-				}
 			}
 		} else {
 			result = e.runStep(job, &step)
-			if result != nil {
-				return result
-			}
+		}
+
+		if step.IgnoreError {
+			result = nil
 		}
 	}
 
@@ -519,6 +529,9 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 	cmd.Stderr = os.Stderr
 
 	util.LogInfo("[lscbuild] start step: %s\n", stepName)
+	defer func() {
+		util.LogInfo("[lscbuild] end step: %s, exit status: %d\n", stepName, cmd.ProcessState.ExitCode())
+	}()
 
 	if err := cmd.Start(); err != nil {
 		result = err
@@ -529,9 +542,19 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 		return result
 	}
 
-	util.LogInfo("[lscbuild] end step: %s\n", stepName)
-
 	return result
+}
+
+func (s *Step) IsError() bool {
+	if s.If == nil {
+		return false
+	}
+	for _, i := range s.If {
+		if i.IsError != nil && *i.IsError {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Step) MustCopy() Step {

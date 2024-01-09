@@ -96,3 +96,22 @@ jobs:
       - cmd: echo ok && exit 0
       - cmd: echo error && exit 1
       - cmd: echo not exec
+
+  test11:
+    steps:
+      - cmd: echo ok1
+      - cmd: invalidcommand
+        ignore_error: true
+      - cmd: echo skipped
+        if:
+          - is_error: true
+      - cmd: echo ok2
+
+  test12:
+    steps:
+      - cmd: echo ok1
+      - cmd: invalidcommand
+      - cmd: echo skip
+      - cmd: echo ok2
+        if:
+          - is_error: true

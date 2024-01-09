@@ -25,7 +25,7 @@ func isDebug() bool {
 	if cacheIsDebug == nil {
 		_, ok := lo.Find(os.Environ(), func(s string) bool {
 			split := strings.Split(s, "=")
-			return split[0] == "LSCBUILD_DEBUG" && split[1] != "" && split[1] != "0"
+			return split[0] == "LSCBUILD_DEBUG" && split[1] != "" && split[1] != "0" && split[1] != "false"
 		})
 		cacheIsDebug = &ok
 	}
