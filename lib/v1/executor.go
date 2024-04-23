@@ -1,12 +1,12 @@
 package v1
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/StevenACoffman/simplerr/errors"
 	"github.com/common-creation/lscbuild/typing"
 	"github.com/common-creation/lscbuild/util"
 	"github.com/go-git/go-git/v5"
@@ -78,17 +78,17 @@ type (
 func NewV1Executer(body []byte) (*Executor, error) {
 	lscBuild := new(LSCBuild)
 	if err := yaml.Unmarshal(body, lscBuild); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	tmpBaseDir, err := os.MkdirTemp("", "lscbuild")
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	tmpEnvFilePath := filepath.Join(tmpBaseDir, ".env")
 	file, err := os.Create(tmpEnvFilePath)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	defer file.Close()
 
@@ -118,7 +118,7 @@ func (e *Executor) Run(jobs ...string) error {
 	} else {
 		for _, job := range jobs {
 			if _, ok := lo.Find(yamlJobNames, func(s string) bool { return s == job }); !ok {
-				return errors.New("job '" + job + "' is not found")
+				return errors.WithStack(errors.New("job '" + job + "' is not found"))
 			} else {
 				targets = append(targets, job)
 			}
@@ -129,22 +129,22 @@ func (e *Executor) Run(jobs ...string) error {
 		if _, ok := lo.Find(targets, func(s string) bool { return s == job.Key }); ok {
 			decoded := new(Job)
 			if err := mapstructure.Decode(job.Value, decoded); err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 
 			util.LogInfo("[lscbuild] initialize plugins\n")
 			if err := e.initializePlugins(job.Key.(string), decoded); err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 
 			util.LogInfo("[lscbuild] execute jobs\n")
 			if err := e.runJob(job.Key.(string), decoded); err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 
 			util.LogInfo("[lscbuild] finalize plugins\n")
 			if err := e.finalizePlugins(); err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 		}
 	}
@@ -256,7 +256,7 @@ func (e *Executor) parsePluginUse(use string) GitRepoInfo {
 }
 
 func (e *Executor) getRepoPath(gitRepo string) string {
-	repoPath := filepath.Join(os.TempDir(), "lscbuild", "plugins")
+	repoPath := filepath.Join(e.tmpBaseDir, "lscbuild", "plugins")
 	lo.ForEach[string](strings.Split(gitRepo, "/"), func(s string, i int) {
 		repoPath = filepath.Join(repoPath, s)
 	})
@@ -269,34 +269,35 @@ func (e *Executor) initializePlugins(name string, job *Job) (result error) {
 		if err := recover(); err != nil {
 			switch e := err.(type) {
 			case string:
-				result = errors.New(e)
+				result = errors.WithStack(errors.New(e))
 			case error:
-				result = e
+				result = errors.WithStack(e)
 			default:
-				result = errors.New("unknown plugin error")
+				result = errors.WithStack(errors.New("unknown plugin error"))
 			}
 		}
 	}()
 
 	// NOTE: prepare plugins
-	tmpBaseDir := filepath.Join(os.TempDir(), "lscbuild-plugins")
+	tmpBaseDir := filepath.Join(os.TempDir(), "lscbuild", "plugins")
 	os.MkdirAll(tmpBaseDir, os.ModePerm)
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		panic(err)
+		panic(errors.WithStack(err))
 	}
 
 	for _, step := range job.Steps {
 		if step.Use != "" {
 			stepName := e.stepName(&step)
-			util.LogInfo("[lscbuild] fetch plugin: %s\n", stepName)
-
 			parsed := e.parsePluginUse(step.Use)
 			repoPath := e.getRepoPath(parsed.GitRepo)
 			if s, err := os.Stat(repoPath); err == nil && s.IsDir() {
+				util.LogInfo("[lscbuild] skip already fetched plugin: %s\n", stepName)
 				continue
 			}
+
+			util.LogInfo("[lscbuild] fetch plugin: %s\n", stepName)
 
 			_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
 				URL:           "https://github.com/" + parsed.GitRepo + ".git",
@@ -304,24 +305,26 @@ func (e *Executor) initializePlugins(name string, job *Job) (result error) {
 				Progress:      os.Stdout,
 			})
 			if err != nil {
-				panic(err)
+				panic(errors.WithStack(err))
 			}
 
 			pluginYamlPath := filepath.Join(repoPath, ".lscbuild.yaml")
 			b, err := os.ReadFile(pluginYamlPath)
 			if err != nil {
-				result = err
+				result = errors.WithStack(err)
 				return result
 			}
 			lscbuild := new(LSCBuild)
 			if err := yaml.Unmarshal(b, lscbuild); err != nil {
-				result = err
+				result = errors.WithStack(err)
 				return result
 			}
 			e.pluginCache[parsed.GitRepo] = &lscbuild.Plugin
 			e.pluginCache[parsed.GitRepo].repoPath = repoPath
 
 			if e.pluginCache[parsed.GitRepo].LifeCycle.Initialize != nil {
+				util.LogInfo("[lscbuild] start initialize plugin: %s\n", stepName)
+
 				initializeStep := e.pluginCache[parsed.GitRepo].LifeCycle.Initialize.MustCopy()
 				initializeStep.Dir = repoPath
 				initializeStep.Env = append(initializeStep.Env, "LSCBUILD_CWD="+cwd)
@@ -333,9 +336,10 @@ func (e *Executor) initializePlugins(name string, job *Job) (result error) {
 				}
 
 				if err := e.runStep(&e.pluginCache[parsed.GitRepo].Job, &initializeStep); err != nil {
-					result = err
+					result = errors.WithStack(err)
 					return result
 				}
+				util.LogInfo("[lscbuild] end initialize plugin: %s\n", stepName)
 			}
 		}
 	}
@@ -346,12 +350,15 @@ func (e *Executor) initializePlugins(name string, job *Job) (result error) {
 func (e *Executor) finalizePlugins() (result error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		panic(err)
+		panic(errors.WithStack(err))
 	}
 
 	for _, v := range e.pluginCache {
 		if v.LifeCycle.Finalize != nil {
 			finalizeStep := v.LifeCycle.Finalize.MustCopy()
+			stepName := e.stepName(&finalizeStep)
+			util.LogInfo("[lscbuild] start finalize plugin: %s\n", stepName)
+
 			finalizeStep.Dir = v.repoPath
 			finalizeStep.Env = append(finalizeStep.Env, "LSCBUILD_CWD="+cwd)
 			finalizeStep.Env = append(finalizeStep.Env, "LSCBUILD_ENV_FILE="+e.tmpEnvFilePath)
@@ -365,9 +372,10 @@ func (e *Executor) finalizePlugins() (result error) {
 				os.RemoveAll(v.repoPath)
 			}()
 			if err := e.runStep(&v.Job, &finalizeStep); err != nil {
-				result = err
+				result = errors.WithStack(err)
 				return result
 			}
+			util.LogInfo("[lscbuild] end finalize plugin: %s\n", stepName)
 		}
 	}
 
@@ -381,11 +389,11 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 		if err := recover(); err != nil {
 			switch e := err.(type) {
 			case string:
-				result = errors.New(e)
+				result = errors.WithStack(errors.New(e))
 			case error:
-				result = e
+				result = errors.WithStack(e)
 			default:
-				result = errors.New("unknown job error")
+				result = errors.WithStack(errors.New("unknown job error"))
 			}
 		}
 	}()
@@ -402,7 +410,7 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		panic(err)
+		panic(errors.WithStack(err))
 	}
 
 	for _, step := range job.Steps {
@@ -449,11 +457,11 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 		if err := recover(); err != nil {
 			switch e := err.(type) {
 			case string:
-				result = errors.New(e)
+				result = errors.WithStack(errors.New(e))
 			case error:
-				result = e
+				result = errors.WithStack(e)
 			default:
-				result = errors.New("unknown step error")
+				result = errors.WithStack(errors.New("unknown step error"))
 			}
 		}
 	}()
@@ -482,7 +490,7 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 		if strings.Contains(job.Shell, "cmd") {
 			file, err := os.CreateTemp(e.tmpBaseDir, "*.bat")
 			if err != nil {
-				panic(err)
+				panic(errors.WithStack(err))
 			}
 			defer func() {
 				file.Close()
@@ -497,7 +505,7 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 		if strings.Contains(job.Shell, "powershell") {
 			file, err := os.CreateTemp(e.tmpBaseDir, "*.ps1")
 			if err != nil {
-				panic(err)
+				panic(errors.WithStack(err))
 			}
 			defer func() {
 				file.Close()
@@ -512,7 +520,7 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 	} else {
 		file, err := os.CreateTemp(e.tmpBaseDir, "*.sh")
 		if err != nil {
-			panic(err)
+			panic(errors.WithStack(err))
 		}
 		defer func() {
 			file.Close()
@@ -551,6 +559,8 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 		for key, value := range envMap {
 			env = append(env, key+"="+value)
 		}
+	} else {
+		util.LogInfo("[lscbuild] read env file error: %w\n", errors.WithStack(err))
 	}
 
 	cmd.Env = env
@@ -571,11 +581,11 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 	}()
 
 	if err := cmd.Start(); err != nil {
-		result = err
+		result = errors.WithStack(err)
 		return result
 	}
 	if err := cmd.Wait(); err != nil {
-		result = err
+		result = errors.WithStack(err)
 		return result
 	}
 
@@ -599,11 +609,11 @@ func (s *Step) MustCopy() Step {
 
 	b, err := yaml.Marshal(*s)
 	if err != nil {
-		panic(err)
+		panic(errors.WithStack(err))
 	}
 	step := new(Step)
 	if err := yaml.Unmarshal(b, step); err != nil {
-		panic(err)
+		panic(errors.WithStack(err))
 	}
 	return *step
 }
