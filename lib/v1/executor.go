@@ -295,7 +295,7 @@ func (e *Executor) initializePlugins(name string, job *Job) (result error) {
 			parsed := e.parsePluginUse(step.Use)
 			repoPath := e.getRepoPath(parsed.GitRepo)
 			if s, err := os.Stat(repoPath); err == nil && s.IsDir() {
-				panic("plugin '" + parsed.GitRepo + "' is already exists")
+				continue
 			}
 
 			_, err := git.PlainClone(repoPath, false, &git.CloneOptions{
