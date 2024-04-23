@@ -169,7 +169,7 @@ func (e *Executor) stepName(step *Step) string {
 	return name
 }
 
-func (e *Executor) prepareStep(name string, step *Step) bool {
+func (e *Executor) prepareStep(name string, step *Step, env []string) bool {
 	util.LogDebug("[lscbuild] prepare step: %s\n", name)
 
 	if len(step.If) == 0 {
@@ -219,8 +219,30 @@ func (e *Executor) prepareStep(name string, step *Step) bool {
 		}
 		if i.Env != nil {
 			for _, e1 := range *i.Env {
-				if _, ok := lo.Find(step.Env, func(e2 string) bool { return e1 == e2 }); !ok {
-					return false
+				tt := make([]string, 0)
+				tt = append(tt, step.Env...)
+				tt = append(tt, env...)
+
+				envMap := make(map[string]string)
+				for _, e := range tt {
+					parts := strings.SplitN(e, "=", 2)
+					if len(parts) == 2 {
+						envMap[parts[0]] = parts[1]
+					}
+				}
+
+				ee := os.Expand(e1, func(s string) string {
+					return envMap[s]
+				})
+				if strings.Contains(ee, "!=") {
+					et := strings.Replace(ee, "!=", "=", 1)
+					if _, ok := lo.Find(step.Env, func(e2 string) bool { return et == e2 }); ok {
+						return false
+					}
+				} else {
+					if _, ok := lo.Find(step.Env, func(e2 string) bool { return ee == e2 }); !ok {
+						return false
+					}
 				}
 			}
 		}
@@ -566,7 +588,7 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 	cmd.Env = env
 	step.Env = env
 
-	if !e.prepareStep(stepName, step) {
+	if !e.prepareStep(stepName, step, env) {
 		util.LogInfo("[lscbuild] skip step: %s\n", stepName)
 		return result
 	}

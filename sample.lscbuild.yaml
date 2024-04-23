@@ -122,3 +122,31 @@ jobs:
       - cmd: echo "ENV_IN_STEP=OK!" >> $LSCBUILD_ENV_FILE
       - cmd: env
       - cmd: echo $ENV_IN_STEP
+
+  test14:
+    steps:
+      - cmd: echo "ENV_IN_STEP=HOGE" >> $LSCBUILD_ENV_FILE
+      - cmd: echo OK
+        if:
+          - env:
+            - ENV_IN_STEP=HOGE
+      - cmd: echo SKIP
+        if:
+          - env:
+            - ENV_IN_STEP_2=HOGE
+      - cmd: echo OK
+        if:
+          - env:
+            - ENV_IN_STEP_2!=HOGE
+      - cmd: echo SKIP
+        if:
+          - env:
+            - ENV_IN_STEP!=HOGE
+      - cmd: echo OK
+        if:
+          - env:
+            - ENV_IN_STEP=$ENV_IN_STEP
+      - cmd: echo SKIP
+        if:
+          - env:
+            - ENV_IN_STEP!=$ENV_IN_STEP
