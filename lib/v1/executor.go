@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/goccy/go-yaml"
+	"github.com/joho/godotenv"
 	"github.com/mitchellh/mapstructure"
 	"github.com/samber/lo"
 )
@@ -19,9 +20,11 @@ import (
 type (
 	Executor struct {
 		typing.Executor
-		lscBuild    *LSCBuild
-		globalEnv   []string
-		pluginCache map[string]*Plugin
+		lscBuild       *LSCBuild
+		globalEnv      []string
+		pluginCache    map[string]*Plugin
+		tmpBaseDir     string
+		tmpEnvFilePath string
 	}
 	LSCBuild struct {
 		typing.LSCBuild
@@ -77,10 +80,24 @@ func NewV1Executer(body []byte) (*Executor, error) {
 	if err := yaml.Unmarshal(body, lscBuild); err != nil {
 		return nil, err
 	}
+
+	tmpBaseDir, err := os.MkdirTemp("", "lscbuild")
+	if err != nil {
+		return nil, err
+	}
+	tmpEnvFilePath := filepath.Join(tmpBaseDir, ".env")
+	file, err := os.Create(tmpEnvFilePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
 	return &Executor{
-		lscBuild:    lscBuild,
-		globalEnv:   make([]string, 0),
-		pluginCache: make(map[string]*Plugin),
+		lscBuild:       lscBuild,
+		globalEnv:      make([]string, 0),
+		pluginCache:    make(map[string]*Plugin),
+		tmpBaseDir:     tmpBaseDir,
+		tmpEnvFilePath: tmpEnvFilePath,
 	}, nil
 }
 
@@ -239,7 +256,7 @@ func (e *Executor) parsePluginUse(use string) GitRepoInfo {
 }
 
 func (e *Executor) getRepoPath(gitRepo string) string {
-	repoPath := filepath.Join(os.TempDir(), "lscbuild-plugins")
+	repoPath := filepath.Join(os.TempDir(), "lscbuild", "plugins")
 	lo.ForEach[string](strings.Split(gitRepo, "/"), func(s string, i int) {
 		repoPath = filepath.Join(repoPath, s)
 	})
@@ -308,6 +325,12 @@ func (e *Executor) initializePlugins(name string, job *Job) (result error) {
 				initializeStep := e.pluginCache[parsed.GitRepo].LifeCycle.Initialize.MustCopy()
 				initializeStep.Dir = repoPath
 				initializeStep.Env = append(initializeStep.Env, "LSCBUILD_CWD="+cwd)
+				initializeStep.Env = append(initializeStep.Env, "LSCBUILD_ENV_FILE="+e.tmpEnvFilePath)
+				if envMap, err := godotenv.Read(e.tmpEnvFilePath); err == nil {
+					for key, value := range envMap {
+						initializeStep.Env = append(initializeStep.Env, key+"="+value)
+					}
+				}
 
 				if err := e.runStep(&e.pluginCache[parsed.GitRepo].Job, &initializeStep); err != nil {
 					result = err
@@ -331,6 +354,12 @@ func (e *Executor) finalizePlugins() (result error) {
 			finalizeStep := v.LifeCycle.Finalize.MustCopy()
 			finalizeStep.Dir = v.repoPath
 			finalizeStep.Env = append(finalizeStep.Env, "LSCBUILD_CWD="+cwd)
+			finalizeStep.Env = append(finalizeStep.Env, "LSCBUILD_ENV_FILE="+e.tmpEnvFilePath)
+			if envMap, err := godotenv.Read(e.tmpEnvFilePath); err == nil {
+				for key, value := range envMap {
+					finalizeStep.Env = append(finalizeStep.Env, key+"="+value)
+				}
+			}
 
 			defer func() {
 				os.RemoveAll(v.repoPath)
@@ -365,7 +394,7 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 
 	if job.Shell == "" {
 		if isWindows {
-			job.Shell = "cmd.exe /c"
+			job.Shell = "powershell.exe"
 		} else {
 			job.Shell = "/bin/sh -e"
 		}
@@ -399,6 +428,7 @@ func (e *Executor) runJob(name string, job *Job) (result error) {
 					newStep.Dir = cache.repoPath
 				}
 				newStep.Env = append(newStep.Env, "LSCBUILD_CWD="+cwd)
+				// NOTE: .envはrunStep内で読み込む
 
 				result = e.runStep(job, &newStep)
 			}
@@ -437,7 +467,7 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 		if isWindows {
 			job.Shell = "powershell.exe"
 		} else {
-			job.Shell = "/bin/sh"
+			job.Shell = "/bin/sh -e"
 		}
 	}
 	if isWindows && strings.HasPrefix(job.Shell, "cmd.exe") {
@@ -450,7 +480,7 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 
 	if isWindows {
 		if strings.Contains(job.Shell, "cmd") {
-			file, err := os.CreateTemp(os.TempDir(), "*.bat")
+			file, err := os.CreateTemp(e.tmpBaseDir, "*.bat")
 			if err != nil {
 				panic(err)
 			}
@@ -465,7 +495,7 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 			step.Cmd = file.Name()
 		}
 		if strings.Contains(job.Shell, "powershell") {
-			file, err := os.CreateTemp(os.TempDir(), "*.ps1")
+			file, err := os.CreateTemp(e.tmpBaseDir, "*.ps1")
 			if err != nil {
 				panic(err)
 			}
@@ -480,7 +510,7 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 			step.Cmd = file.Name()
 		}
 	} else {
-		file, err := os.CreateTemp(os.TempDir(), "*.sh")
+		file, err := os.CreateTemp(e.tmpBaseDir, "*.sh")
 		if err != nil {
 			panic(err)
 		}
@@ -516,6 +546,13 @@ func (e *Executor) runStep(job *Job, step *Step) (result error) {
 	if isWindows {
 		env = append(env, "ErrorActionPreference=Stop")
 	}
+	env = append(env, "LSCBUILD_ENV_FILE="+e.tmpEnvFilePath)
+	if envMap, err := godotenv.Read(e.tmpEnvFilePath); err == nil {
+		for key, value := range envMap {
+			env = append(env, key+"="+value)
+		}
+	}
+
 	cmd.Env = env
 	step.Env = env
 

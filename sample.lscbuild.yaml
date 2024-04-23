@@ -115,3 +115,10 @@ jobs:
       - cmd: echo ok2
         if:
           - is_error: true
+
+  test13:
+    steps:
+      - cmd: env
+      - cmd: echo "ENV_IN_STEP=OK!" >> $LSCBUILD_ENV_FILE
+      - cmd: env
+      - cmd: echo $ENV_IN_STEP
